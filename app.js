@@ -1,6 +1,6 @@
 // 1) ضعي بيانات مشروع Supabase هنا بعد إنشاء المشروع.
-const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://fjtxomdiktaerrbjrlhu.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Onk9FWmD8HCdud-B8et8dQ_IpBBvrpu";
 const BUCKET = "audio-files";
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
