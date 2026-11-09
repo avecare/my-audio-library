@@ -45,7 +45,7 @@ function element(tag, className, text) {
   return el;
 }
 
-// واجهة الإدارة الجديدة
+// واجهة الإدارة
 function buildInterface() {
   if ($("manager-toolbar")) return;
 
@@ -80,7 +80,9 @@ function buildInterface() {
       display:flex; justify-content:space-between;
       align-items:center; gap:10px; cursor:pointer;
     }
-    .folder-title { font-weight:bold; color:#fbbf24; }
+    .folder-title {
+      font-weight:bold; color:#fbbf24;
+    }
     .file-preview {
       width:100%; max-height:300px; object-fit:contain;
       border-radius:12px; margin:12px 0;
@@ -92,9 +94,16 @@ function buildInterface() {
       padding:9px 13px; border:0; border-radius:9px;
       cursor:pointer; background:#2563eb; color:white;
     }
-    .file-actions .secondary { background:#475569; }
-    .url { font-size:11px; opacity:.7; overflow-wrap:anywhere; margin-top:8px; }
-    .manager-path { color:#94a3b8; margin:8px 0; }
+    .file-actions .secondary {
+      background:#475569;
+    }
+    .url {
+      font-size:11px; opacity:.7;
+      overflow-wrap:anywhere; margin-top:8px;
+    }
+    .manager-path {
+      color:#94a3b8; margin:8px 0;
+    }
   `;
   document.head.appendChild(style);
 
@@ -114,14 +123,18 @@ function buildInterface() {
 
   imageInput.onchange = async () => {
     const files = Array.from(imageInput.files || []);
+
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
+
       if (file.size > MAX_FILE_BYTES) {
         alert(`الصورة ${file.name} أكبر من 25 ميغابايت`);
         continue;
       }
+
       await uploadFile(file);
     }
+
     imageInput.value = "";
   };
 
@@ -129,11 +142,11 @@ function buildInterface() {
   folderButton.onclick = createFolder;
 
   const backButton = element("button", "secondary", "⬅ رجوع");
+  backButton.id = "folder-back";
   backButton.onclick = () => {
     currentFolder = currentFolder.split("/").slice(0, -1).join("/");
     loadFiles();
   };
-  backButton.id = "folder-back";
 
   const refreshButton = element("button", "secondary", "🔄 تحديث");
   refreshButton.onclick = loadFiles;
@@ -154,44 +167,58 @@ function buildInterface() {
   toolbar.append(imageInput, actions, search, path);
 
   const list = $("files-list");
-  if (list) appPanel.insertBefore(toolbar, list);
-}
-
-async function showSession(session) {
-  loginPanel.classList.toggle("hidden", !!session);
-  appPanel.classList.toggle("hidden", !session);
-  if (session) {
-    buildInterface();
-    loadFiles();
+  if (list && appPanel) {
+    appPanel.insertBefore(toolbar, list);
   }
 }
 
+// إظهار المكتبة بعد تسجيل الدخول
+async function showSession(session) {
+  if (!session) {
+    loginPanel?.classList.remove("hidden");
+    appPanel?.classList.add("hidden");
+    return;
+  }
+
+  loginPanel?.classList.add("hidden");
+  appPanel?.classList.remove("hidden");
+
+  buildInterface();
+  await loadFiles();
+}
+
+// بدء التطبيق
 async function init() {
-  if (!configured) {
+  if (!configured || !client) {
     message("login-message", "تحقق من إعدادات Supabase.", true);
     return;
   }
 
-  const { data } = await client.auth.getSession();
-  showSession(data.session);
+  const { data, error } = await client.auth.getSession();
 
-  client.auth.onAuthStateChange((_event, session) => {
-    showSession(session);
+  if (error) {
+    message("login-message", error.message, true);
+    return;
+  }
+
+  await showSession(data.session);
+
+  // عند تسجيل الخروج نعيد إظهار صفحة الدخول
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT" || !session) {
+      showSession(null);
+    }
   });
 }
 
+// تسجيل الدخول
 $("login-form").addEventListener("submit", async e => {
   e.preventDefault();
+
   if (!client) return;
 
   message("login-message", "جارٍ تسجيل الدخول...");
 
-  const { error } = await client.auth.signInWithPassword({
-    email: $("email").value.trim(),
-    password: $("password").value
-  });
-
-  
   const { data, error } = await client.auth.signInWithPassword({
     email: $("email").value.trim(),
     password: $("password").value
@@ -203,15 +230,29 @@ $("login-form").addEventListener("submit", async e => {
   }
 
   message("login-message", "تم تسجيل الدخول بنجاح.");
-  await showSession(data.session);
- 
 
-$("logout").addEventListener("click", async () => {
-  await client.auth.signOut();
+  await showSession(data.session);
 });
 
+// تسجيل الخروج
+$("logout").addEventListener("click", async () => {
+  if (!client) return;
+
+  const { error } = await client.auth.signOut();
+
+  if (error) {
+    alert(error.message);
+  } else {
+    currentFolder = "";
+    searchQuery = "";
+    await showSession(null);
+  }
+});
+
+// اختيار ملف صوتي
 $("audio-file").addEventListener("change", e => {
   selectedFile = e.target.files?.[0] || null;
+
   $("selected-name").textContent = selectedFile
     ? `${selectedFile.name} — ${humanSize(selectedFile.size)}`
     : "لم يتم اختيار ملف";
@@ -220,10 +261,12 @@ $("audio-file").addEventListener("change", e => {
   message("upload-message", "");
 });
 
+// رفع ملف صوتي
 $("upload").addEventListener("click", async () => {
   if (!selectedFile) return;
 
   const ext = selectedFile.name.split(".").pop().toLowerCase();
+
   if (!["mp3", "wav", "m4a"].includes(ext)) {
     return message("upload-message", "نوع الملف غير مدعوم.", true);
   }
@@ -247,6 +290,7 @@ $("upload").addEventListener("click", async () => {
   }
 });
 
+// وظيفة رفع الملفات
 async function uploadFile(file) {
   const { data: { user }, error: userError } = await client.auth.getUser();
 
@@ -256,6 +300,7 @@ async function uploadFile(file) {
   }
 
   const prefix = currentFolder ? currentFolder + "/" : "";
+
   const path = `${user.id}/${prefix}${Date.now()}-${crypto.randomUUID()}-${safeName(file.name)}`;
 
   const { error } = await client.storage.from(BUCKET).upload(
@@ -276,14 +321,20 @@ async function uploadFile(file) {
   return true;
 }
 
-// إنشاء مجلد فعلي داخل التخزين
+// إنشاء مجلد
 async function createFolder() {
   const name = prompt("اكتب اسم المجلد الجديد:");
+
   if (!name || !name.trim()) return;
 
   const clean = safeName(name.trim());
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) return;
+
+  const { data: { user }, error: userError } = await client.auth.getUser();
+
+  if (userError || !user) {
+    alert("يرجى تسجيل الدخول مجددًا.");
+    return;
+  }
 
   const prefix = currentFolder ? currentFolder + "/" : "";
   const folderPath = `${user.id}/${prefix}${clean}/.keep`;
@@ -291,7 +342,10 @@ async function createFolder() {
   const { error } = await client.storage.from(BUCKET).upload(
     folderPath,
     new Blob([""], { type: "text/plain" }),
-    { upsert: false, contentType: "text/plain" }
+    {
+      upsert: false,
+      contentType: "text/plain"
+    }
   );
 
   if (error) {
@@ -307,21 +361,29 @@ async function loadFiles() {
   if (!client || !appPanel || appPanel.classList.contains("hidden")) return;
 
   const { data: { user }, error: authError } = await client.auth.getUser();
+
   if (authError || !user) return;
 
   const prefix = currentFolder
     ? `${user.id}/${currentFolder}`
     : user.id;
 
-  $("manager-path").textContent = "📁 المجلد الحالي: " + (currentFolder || "الرئيسي");
-  $("folder-back").style.display = currentFolder ? "inline-block" : "none";
+  const pathElement = $("manager-path");
+  const backButton = $("folder-back");
+  const list = $("files-list");
+
+  if (!list || !pathElement || !backButton) return;
+
+  pathElement.textContent =
+    "📁 المجلد الحالي: " + (currentFolder || "الرئيسي");
+
+  backButton.style.display = currentFolder ? "inline-block" : "none";
 
   const { data, error } = await client.storage.from(BUCKET).list(prefix, {
     limit: 100,
     sortBy: { column: "created_at", order: "desc" }
   });
 
-  const list = $("files-list");
   list.replaceChildren();
 
   if (error) {
@@ -336,58 +398,84 @@ async function loadFiles() {
 
   let visibleCount = 0;
 
+  // عرض المجلدات
   for (const folder of folders) {
-    if (searchQuery && !folder.name.toLowerCase().includes(searchQuery)) continue;
+    if (searchQuery && !folder.name.toLowerCase().includes(searchQuery)) {
+      continue;
+    }
 
     const card = element("div", "folder-card");
+
     const title = element("span", "folder-title", "📁 " + folder.name);
+
     const open = element("button", "secondary", "فتح");
+
     open.onclick = () => {
       currentFolder = currentFolder
         ? currentFolder + "/" + folder.name
         : folder.name;
+
       loadFiles();
     };
 
     card.onclick = () => open.click();
     card.append(title, open);
     list.append(card);
+
     visibleCount++;
   }
 
+  // عرض الملفات
   for (const file of files) {
     const displayName = file.name.replace(/^\d+-[0-9a-f-]+-/i, "");
 
-    if (searchQuery && !displayName.toLowerCase().includes(searchQuery)) continue;
+    if (searchQuery && !displayName.toLowerCase().includes(searchQuery)) {
+      continue;
+    }
 
     const path = `${prefix}/${file.name}`;
-    const { data: { publicUrl } } = client.storage.from(BUCKET).getPublicUrl(path);
+
+    const { data: { publicUrl } } =
+      client.storage.from(BUCKET).getPublicUrl(path);
 
     const card = element("article", "file-card");
     const top = element("div", "file-top");
+
     const name = element("div", "file-name", displayName);
-    const meta = element("div", "file-meta", humanSize(file.metadata?.size || 0));
+
+    const meta = element(
+      "div",
+      "file-meta",
+      humanSize(file.metadata?.size || 0)
+    );
 
     top.append(name, meta);
     card.append(top);
 
     const ext = displayName.split(".").pop().toLowerCase();
-    const isImage = file.metadata?.mimetype?.startsWith("image/") ||
+
+    const isImage =
+      file.metadata?.mimetype?.startsWith("image/") ||
       ["jpg", "jpeg", "png", "gif", "webp", "svg", "avif"].includes(ext);
 
     if (isImage) {
       const preview = element("img", "file-preview");
+
       preview.src = publicUrl;
       preview.alt = displayName;
       preview.loading = "lazy";
+
       card.append(preview);
+
     } else if (["mp3", "wav", "m4a", "ogg"].includes(ext)) {
       const audio = element("audio");
+
       audio.controls = true;
       audio.preload = "none";
       audio.src = publicUrl;
       audio.style.width = "100%";
       audio.style.marginTop = "12px";
+
       card.append(audio);
     }
 
@@ -395,41 +483,63 @@ async function loadFiles() {
     const actions = element("div", "file-actions");
 
     const copy = element("button", "", "نسخ الرابط");
+
     copy.onclick = async () => {
       try {
         await navigator.clipboard.writeText(publicUrl);
         copy.textContent = "تم النسخ ✓";
-        setTimeout(() => copy.textContent = "نسخ الرابط", 1600);
+
+        setTimeout(() => {
+          copy.textContent = "نسخ الرابط";
+        }, 1600);
+
       } catch {
         alert("تعذر النسخ. افتح الرابط وانسخه يدويًا.");
       }
     };
 
     const open = element("button", "secondary", "فتح الرابط");
-    open.onclick = () => window.open(publicUrl, "_blank", "noopener");
+
+    open.onclick = () => {
+      window.open(publicUrl, "_blank", "noopener");
+    };
 
     const del = element("button", "secondary", "حذف");
+
     del.onclick = async () => {
       if (!confirm("هل أنت متأكد من حذف هذا الملف؟")) return;
 
       const { error } = await client.storage.from(BUCKET).remove([path]);
-      if (error) alert(error.message);
-      else loadFiles();
+
+      if (error) {
+        alert(error.message);
+      } else {
+        await loadFiles();
+      }
     };
 
     actions.append(copy, open, del);
     card.append(url, actions);
     list.append(card);
+
     visibleCount++;
   }
 
   if (!visibleCount) {
-    list.append(element("p", "muted",
-      searchQuery ? "لا توجد نتائج للبحث." : "هذا المجلد فارغ. ارفع ملفًا أو أنشئ مجلدًا جديدًا."
-    ));
+    list.append(
+      element(
+        "p",
+        "muted",
+        searchQuery
+          ? "لا توجد نتائج للبحث."
+          : "هذا المجلد فارغ. ارفع ملفًا أو أنشئ مجلدًا جديدًا."
+      )
+    );
   }
 }
 
+// زر التحديث الأصلي
 $("refresh").addEventListener("click", loadFiles);
 
+// تشغيل التطبيق
 init();
