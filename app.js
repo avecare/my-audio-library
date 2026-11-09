@@ -191,9 +191,20 @@ $("login-form").addEventListener("submit", async e => {
     password: $("password").value
   });
 
-  if (error) message("login-message", error.message, true);
-  else message("login-message", "تم تسجيل الدخول بنجاح.");
-});
+  
+  const { data, error } = await client.auth.signInWithPassword({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+
+  if (error) {
+    message("login-message", error.message, true);
+    return;
+  }
+
+  message("login-message", "تم تسجيل الدخول بنجاح.");
+  await showSession(data.session);
+ 
 
 $("logout").addEventListener("click", async () => {
   await client.auth.signOut();
